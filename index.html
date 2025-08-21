@@ -348,8 +348,8 @@ function animate(){
         const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0,1,0)).normalize();
 
         const move = new THREE.Vector3();
-        move.addScaledVector(dir, -forward * moveSpeed * dt);
-        move.addScaledVector(right, strafe * moveSpeed * dt);
+        move.addScaledVector(dir, forward * moveSpeed * dt);
+        move.addScaledVector(right, -strafe * moveSpeed * dt);
 
         camera.position.add(move);
     } else {
