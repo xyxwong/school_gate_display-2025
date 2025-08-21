@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 模型展示</title>
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #333333;
+        }
+        model-viewer {
+            width: 90vw;
+            height: 90vh;
+            --poster-color: transparent;
+        }
+    </style>
+</head>
+<body>
+
+    <model-viewer 
+        src="model.glb" 
+        alt="一個 3D 模型"
+        camera-controls
+        auto-rotate
+        shadow-intensity="1"
+        min-camera-orbit="auto auto 5%"
+        max-camera-orbit="auto auto 200%"
+        orbit-sensitivity="1">
+    </model-viewer>
+
+    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
+
+</body>
+</html>
