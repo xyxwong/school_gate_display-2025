@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D 模型展示</title>
+    <title>3D 模型展示 (從 ZIP 載入)</title>
     <style>
         html, body {
             height: 100%;
@@ -25,7 +25,7 @@
 <body>
 
     <model-viewer 
-        src="model.glb" 
+        id="model-viewer-element"
         alt="一個 3D 模型"
         camera-controls
         auto-rotate
@@ -36,6 +36,69 @@
     </model-viewer>
 
     <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+    <script>
+        // 等待整個頁面載入完成後執行
+        document.addEventListener('DOMContentLoaded', () => {
+            const viewer = document.getElementById('model-viewer-element');
+
+            // 定義 ZIP 檔案的路徑和 ZIP 內模型檔案的名稱
+            const zipPath = './model.zip';
+            const modelFileNameInZip = 'model.glb';
+
+            // 主功能：從 ZIP 檔案中載入模型
+            async function loadModelFromZip() {
+                try {
+                    // 步驟 1: 下載 ZIP 檔案
+                    console.log(`正在下載 ${zipPath}...`);
+                    const response = await fetch(zipPath);
+                    if (!response.ok) {
+                        throw new Error(`網路錯誤: ${response.statusText}`);
+                    }
+                    const zipBlob = await response.blob();
+                    console.log('下載完成。');
+
+                    // 步驟 2: 使用 JSZip 解壓縮
+                    console.log('正在解壓縮...');
+                    const jszip = new JSZip();
+                    const zip = await jszip.loadAsync(zipBlob);
+                    console.log('解壓縮完成。');
+
+                    // 步驟 3: 在 ZIP 中尋找模型檔案
+                    const modelFile = zip.file(modelFileNameInZip);
+                    if (!modelFile) {
+                        throw new Error(`在 ${zipPath} 中找不到檔案: ${modelFileNameInZip}`);
+                    }
+                    console.log(`找到檔案: ${modelFileNameInZip}`);
+
+                    // 步驟 4: 將模型檔案內容轉為 Blob
+                    const modelBlob = await modelFile.async('blob');
+
+                    // 步驟 5: 為 Blob 建立一個暫時的 URL
+                    const objectURL = URL.createObjectURL(modelBlob);
+                    console.log('建立暫時 URL 並載入模型...');
+
+                    // 步驟 6: 將 URL 賦予 model-viewer 的 src 屬性
+                    viewer.src = objectURL;
+                    
+                    // 當模型載入後，可以選擇性地釋放 URL 以節省記憶體
+                    viewer.addEventListener('load', () => {
+                        URL.revokeObjectURL(objectURL);
+                        console.log('模型載入完成，暫時 URL 已釋放。');
+                    }, { once: true });
+
+                } catch (error) {
+                    console.error('載入模型時發生錯誤:', error);
+                    viewer.alt = `載入模型失敗: ${error.message}`;
+                }
+            }
+
+            // 執行主功能
+            loadModelFromZip();
+        });
+    </script>
 
 </body>
 </html>
