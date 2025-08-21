@@ -59,6 +59,8 @@
                     }
                     const zipBlob = await response.blob();
                     console.log('下載完成。');
+                    const zip = await jszip.loadAsync(zipBlob);
+                    console.log('ZIP 檔案包含:', Object.keys(zip.files));
 
                     // 步驟 2: 使用 JSZip 解壓縮
                     console.log('正在解壓縮...');
@@ -90,6 +92,7 @@
                     }, { once: true });
 
                 } catch (error) {
+                    console.error('解壓縮或載入失敗，ZIP內容:', error, zip ? Object.keys(zip.files) : '無法讀取');
                     console.error('載入模型時發生錯誤:', error);
                     viewer.alt = `載入模型失敗: ${error.message}`;
                 }
@@ -102,3 +105,4 @@
 
 </body>
 </html>
+
