@@ -1,131 +1,382 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D 模型展示 (從 ZIP 載入)</title>
-    <style>
-        html, body {
-            height: 100%;
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            background-color: #333333;
-        }
-        model-viewer {
-            width: 90vw;
-            height: 90vh;
-            --poster-color: transparent;
-        }
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3D 模型漫遊（ZIP -> GLB -> Three.js）</title>
 
-        /* 🔄 Loading 動畫 */
-        #loading {
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            background: rgba(51,51,51,0.9);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 9999;
-            color: #fff;
-            font-size: 1.2em;
-            flex-direction: column;
-        }
-        .spinner {
-            border: 6px solid #f3f3f3;
-            border-top: 6px solid #00ffcc;
-            border-radius: 50%;
-            width: 60px;
-            height: 60px;
-            animation: spin 1s linear infinite;
-            margin-bottom: 15px;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg);}
-            100% { transform: rotate(360deg);}
-        }
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.155.0/build/three.module.js"
+      }
+    }
+    </script>
+
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='14'%3E🔷%3C/text%3E%3C/svg%3E">
+
+    <style>
+        html, body { height:100%; margin:0; background:#111; color:#fff; font-family:system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; }
+        #container{position:fixed; inset:0; display:flex; align-items:stretch;}
+        canvas{display:block}
+        #loading { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; background: rgba(0,0,0,0.8); z-index:9999; gap:.75rem; }
+        .spinner{ width:64px; height:64px; border-radius:50%; border:8px solid rgba(255,255,255,0.08); border-top-color:#00ffcc; animation:spin 1s linear infinite }
+        @keyframes spin{ to{transform:rotate(360deg)} }
+        #instructions{ position:fixed; left:50%; transform:translateX(-50%); bottom:24px; background:rgba(0,0,0,0.5); padding:8px 12px; border-radius:8px; font-size:14px; z-index:9000; }
+        #enterButton{ background:#00ffcc; color:#001; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:600 }
+        #hint { position:fixed; top:12px; left:12px; z-index:9000; background:rgba(0,0,0,0.45); padding:8px 10px; border-radius:6px; font-size:13px }
+        #error{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,0.85); z-index:10000; padding:20px; }
+        #error p{ color:#ff8080 }
+
+        /* 虚拟摇杆（默认隐藏，仅在移动端显示） */
+        #joystick { display: none; position: fixed; left: 60px; bottom: 80px; width: 120px; height: 120px; background: rgba(255,255,255,0.05); border-radius: 50%; touch-action: none; z-index: 9999; }
+        #stick { position: absolute; left: 50%; top: 50%; width: 60px; height: 60px; background: rgba(0,255,204,0.6); border-radius: 50%; transform: translate(-50%,-50%); }
+        #lookArea { display:none; position: fixed; right: 0; bottom: 0; width: 50%; height: 100%; z-index: 9998; touch-action: none; }
+        /* 在小屏幕时把摇杆和 lookArea 的大小/位置可以再调 */
     </style>
 </head>
 <body>
 
-    <!-- 🔄 Loading 畫面 -->
-    <div id="loading">
-        <div class="spinner"></div>
-        <div>模型載入中，請稍候...</div>
-    </div>
+<div id="container"></div>
 
-    <!-- 3D 模型顯示 -->
-    <model-viewer 
-        id="model-viewer-element"
-        alt="一個 3D 模型"
-        camera-controls
-        auto-rotate
-        shadow-intensity="1"
-        min-camera-orbit="auto auto 5%"
-        max-camera-orbit="auto auto 200%"
-        orbit-sensitivity="1">
-    </model-viewer>
+<div id="loading">
+    <div class="spinner"></div>
+    <p id="loadingText">模型載入中，請稍候…</p>
+</div>
 
-    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<div id="hint">WASD 移動，滑鼠控制視角，Shift 加速，Esc 解除游標鎖定</div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const viewer = document.getElementById('model-viewer-element');
-            const loading = document.getElementById('loading');
+<div id="instructions">
+    <button id="enterButton">點我開始漫遊（啟用游標鎖定）</button>
+</div>
 
-            const zipPath = './model.zip';
-            const modelFileNameInZip = 'model.glb';
+<div id="error"><div><h3>載入失敗</h3><p id="errorMsg"></p></div></div>
 
-            async function loadModelFromZip() {
-                try {
-                    console.log(`正在下載 ${zipPath}...`);
-                    const response = await fetch(zipPath);
-                    if (!response.ok) {
-                        throw new Error(`網路錯誤: ${response.statusText}`);
-                    }
-                    const zipBlob = await response.blob();
-                    console.log('下載完成。');
+<!-- 新增手機 UI 元素（必須存在以避免 null.style 錯誤） -->
+<div id="joystick"><div id="stick"></div></div>
+<div id="lookArea"></div>
 
-                    console.log('正在解壓縮...');
-                    const jszip = new JSZip();
-                    const zip = await jszip.loadAsync(zipBlob);
-                    console.log('ZIP 檔案包含:', Object.keys(zip.files));
-                    console.log('解壓縮完成。');
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'https://unpkg.com/three@0.155.0/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'https://unpkg.com/three@0.155.0/examples/jsm/loaders/DRACOLoader.js';
+import { PointerLockControls } from 'https://unpkg.com/three@0.155.0/examples/jsm/controls/PointerLockControls.js';
+import { RGBELoader } from 'https://unpkg.com/three@0.155.0/examples/jsm/loaders/RGBELoader.js';
 
-                    const modelFile = zip.file(modelFileNameInZip);
-                    if (!modelFile) {
-                        throw new Error(`在 ${zipPath} 中找不到檔案: ${modelFileNameInZip}`);
-                    }
-                    console.log(`找到檔案: ${modelFileNameInZip}`);
 
-                    const modelBlob = await modelFile.async('blob');
-                    const objectURL = URL.createObjectURL(modelBlob);
-                    console.log('建立暫時 URL 並載入模型...');
+const container = document.getElementById('container');
+const loading = document.getElementById('loading');
+const loadingText = document.getElementById('loadingText');
+const enterButton = document.getElementById('enterButton');
+const instructions = document.getElementById('instructions');
+const hint = document.getElementById('hint');
+const errorBox = document.getElementById('error');
+const errorMsg = document.getElementById('errorMsg');
 
-                    viewer.src = objectURL;
+const joystick = document.getElementById('joystick');
+const stick = document.getElementById('stick');
+const lookArea = document.getElementById('lookArea');
 
-                    viewer.addEventListener('load', () => {
-                        URL.revokeObjectURL(objectURL);
-                        console.log('模型載入完成，暫時 URL 已釋放。');
-                        // ✅ 隱藏 loading
-                        loading.style.display = 'none';
-                    }, { once: true });
+const zipPath = './model.zip';
+const modelFileNameInZip = 'model.glb';
 
-                } catch (error) {
-                    console.error('解壓縮或載入失敗:', error);
-                    viewer.alt = `載入模型失敗: ${error.message}`;
-                    loading.innerHTML = `<div>載入失敗: ${error.message}</div>`;
-                }
-            }
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x222222);
 
-            loadModelFromZip();
-        });
-    </script>
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+container.appendChild(renderer.domElement);
+
+const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
+hemi.position.set(0, 20, 0);
+scene.add(hemi);
+const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+dir.position.set(5, 10, 7.5);
+dir.castShadow = true;
+scene.add(dir);
+
+// 不再自動加入 ground（你之前註解過）
+// const ground = ...
+
+const controls = new PointerLockControls(camera, renderer.domElement);
+
+enterButton.addEventListener('click', ()=>{ controls.lock(); });
+
+controls.addEventListener('lock', ()=>{ if(instructions) instructions.style.display = 'none'; if(hint) hint.style.display = 'block'; });
+controls.addEventListener('unlock', ()=>{ if(instructions) instructions.style.display = 'block'; });
+
+const moveState = { forward:false, backward:false, left:false, right:false, sprint:false };
+const speed = 20;
+const sprintMultiplier = 2.2;
+
+// 判断是否移动设备
+const isMobile = /Android|iPhone|iPad|iPod|iOS/i.test(navigator.userAgent);
+
+// mobile 控制变量
+let joystickActive = false;
+let joystickVector = {x:0, y:0};
+let lookTouchActive = false;
+let lastTouch = null;
+let yaw = 0, pitch = 0;
+
+// 仅在元素存在时设置显示/事件
+if(isMobile){
+  if(instructions) instructions.style.display = 'none';
+  if(hint) hint.style.display = 'none';
+  if(joystick) joystick.style.display = 'block';
+  if(lookArea) lookArea.style.display = 'block';
+
+  if(joystick){
+    joystick.addEventListener('touchstart', e=>{
+      e.preventDefault();
+      joystickActive = true;
+    }, { passive:false });
+    joystick.addEventListener('touchend', e=>{
+      e.preventDefault();
+      joystickActive = false;
+      joystickVector = {x:0,y:0};
+      if(stick) { stick.style.left = "50%"; stick.style.top = "50%"; }
+    }, { passive:false });
+    joystick.addEventListener('touchmove', e=>{
+      e.preventDefault();
+      const rect = joystick.getBoundingClientRect();
+      const touch = e.touches[0];
+      const dx = touch.clientX - (rect.left + rect.width/2);
+      const dy = touch.clientY - (rect.top + rect.height/2);
+      const maxDist = rect.width/2 - 16;
+      const dist = Math.min(Math.sqrt(dx*dx+dy*dy), maxDist);
+      const angle = Math.atan2(dy, dx);
+      joystickVector.x = Math.cos(angle) * (dist/(rect.width/2));
+      joystickVector.y = Math.sin(angle) * (dist/(rect.height/2));
+      if(stick){
+        const lx = 50 + joystickVector.x * 40;
+        const ty = 50 + joystickVector.y * 40;
+        stick.style.left = `${lx}%`;
+        stick.style.top  = `${ty}%`;
+      }
+    }, { passive:false });
+  }
+
+  if(lookArea){
+    lookArea.addEventListener('touchstart', e=>{
+      e.preventDefault();
+      lookTouchActive = true;
+      lastTouch = e.touches[0];
+    }, { passive:false });
+    lookArea.addEventListener('touchend', e=>{
+      e.preventDefault();
+      lookTouchActive = false;
+      lastTouch = null;
+    }, { passive:false });
+    lookArea.addEventListener('touchmove', e=>{
+      e.preventDefault();
+      if(!lookTouchActive) return;
+      const t = e.touches[0];
+      if(!lastTouch) { lastTouch = t; return; }
+      const dx = t.clientX - lastTouch.clientX;
+      const dy = t.clientY - lastTouch.clientY;
+      lastTouch = t;
+
+      // 调整灵敏度（可微调）
+      yaw -= dx * 0.003;
+      pitch -= dy * 0.003;
+      pitch = Math.max(-Math.PI/2 + 0.01, Math.min(Math.PI/2 - 0.01, pitch));
+    }, { passive:false });
+  }
+} else {
+  // 桌面：隐藏手机 UI（若存在）
+  if(joystick) joystick.style.display = 'none';
+  if(lookArea) lookArea.style.display = 'none';
+}
+
+function onKeyDown(e){
+    switch(e.code){
+        case 'ArrowUp': case 'KeyW': moveState.forward = true; break;
+        case 'ArrowLeft': case 'KeyA': moveState.left = true; break;
+        case 'ArrowDown': case 'KeyS': moveState.backward = true; break;
+        case 'ArrowRight': case 'KeyD': moveState.right = true; break;
+        case 'ShiftLeft': case 'ShiftRight': moveState.sprint = true; break;
+    }
+}
+function onKeyUp(e){
+    switch(e.code){
+        case 'ArrowUp': case 'KeyW': moveState.forward = false; break;
+        case 'ArrowLeft': case 'KeyA': moveState.left = false; break;
+        case 'ArrowDown': case 'KeyS': moveState.backward = false; break;
+        case 'ArrowRight': case 'KeyD': moveState.right = false; break;
+        case 'ShiftLeft': case 'ShiftRight': moveState.sprint = false; break;
+    }
+}
+window.addEventListener('keydown', onKeyDown);
+window.addEventListener('keyup', onKeyUp);
+
+window.addEventListener('resize', ()=>{
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// helper for JSZip (same robust approach you had)
+async function ensureJSZipConstructor() {
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');
+    const JSZip = mod.default || mod.JSZip || mod;
+    if (typeof JSZip === 'function') return JSZip;
+  } catch (e) {
+    console.warn('dynamic import JSZip failed, fallback to UMD:', e);
+  }
+  if (window.JSZip && typeof window.JSZip === 'function') return window.JSZip;
+  await new Promise((resolve, reject) => {
+    const url = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
+    const existing = Array.from(document.scripts).find(s => s.src && s.src.includes('jszip'));
+    if (existing) {
+      if (window.JSZip && typeof window.JSZip === 'function') return resolve();
+      existing.addEventListener('load', () => resolve());
+      existing.addEventListener('error', () => reject(new Error('Failed to load JSZip (existing script)')));
+      return;
+    }
+    const s = document.createElement('script');
+    s.src = url;
+    s.onload = () => {
+      if (window.JSZip && typeof window.JSZip === 'function') resolve();
+      else reject(new Error('JSZip loaded but window.JSZip not found'));
+    };
+    s.onerror = () => reject(new Error('Failed to load JSZip UMD script'));
+    document.head.appendChild(s);
+  });
+  if (window.JSZip && typeof window.JSZip === 'function') return window.JSZip;
+  throw new Error('Unable to obtain JSZip constructor');
+}
+
+async function loadModelFromZip() {
+  try {
+    loadingText.textContent = '正在下載 ZIP...';
+    const resp = await fetch(zipPath);
+    if (!resp.ok) throw new Error('ZIP 下載錯誤: ' + resp.status);
+    const zipBlob = await resp.blob();
+
+    loadingText.textContent = '解壓縮 ZIP...';
+    const JSZip = await ensureJSZipConstructor();
+    const jszip = new JSZip();
+    const zip = await jszip.loadAsync(zipBlob);
+
+    loadingText.textContent = '搜尋模型檔案...';
+    console.log('ZIP files:', Object.keys(zip.files));
+
+    let modelFile = zip.file(modelFileNameInZip);
+    if(!modelFile){
+        const glbEntry = Object.keys(zip.files).find(n=> n.toLowerCase().endsWith('.glb'));
+        if(glbEntry) modelFile = zip.file(glbEntry);
+    }
+    if(!modelFile) throw new Error('ZIP 內找不到 .glb 檔案');
+
+    loadingText.textContent = '讀取模型資料...';
+    const modelBlob = await modelFile.async('blob');
+    const modelURL = URL.createObjectURL(modelBlob);
+
+    const loader = new GLTFLoader();
+    // Draco optional...
+    loadingText.textContent = '載入 GLB...';
+    loader.load(modelURL, gltf=>{
+        const model = gltf.scene || gltf.scenes[0];
+        model.traverse(child=>{ if(child.isMesh){ child.castShadow=true; child.receiveShadow=true; } });
+        scene.add(model);
+
+        // 把模型中心移到原點，再向上抬半高度，保證底面在 y=0
+        const box = new THREE.Box3().setFromObject(model);
+        const size = new THREE.Vector3(); box.getSize(size);
+        const center = new THREE.Vector3(); box.getCenter(center);
+
+        model.position.sub(center);
+        model.position.y += size.y / 2;
+
+        // 合理放置相機（用模型高度做参考）
+        const maxDim = Math.max(size.x, size.y, size.z);
+        camera.position.set(0, 20, maxDim * 0.6 + 1);
+        // For desktop pointer lock, position the controls' object too:
+        controls.getObject().position.copy(camera.position);
+
+        loading.style.display = 'none';
+        URL.revokeObjectURL(modelURL);
+        console.log('模型載入完成');
+    }, xhr=>{
+        if(xhr.total) {
+            const p = Math.round((xhr.loaded / xhr.total) * 100);
+            loadingText.textContent = `載入 GLB... ${p}%`;
+        }
+    }, err=>{
+        throw err;
+    });
+    const rgbeLoader = new RGBELoader();
+    rgbeLoader.setPath('https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/');
+    rgbeLoader.load('kloofendal_48d_partly_cloudy_puresky_2k.hdr', (texture)=>{
+        texture.mapping = THREE.EquirectangularReflectionMapping;
+        scene.environment = texture;   // 环境光照（影响 PBR 材质）
+        scene.background = texture;    // 背景设置为 HDR（也可改回颜色）
+    });
+
+
+  }catch(err){
+    console.error(err);
+    if(errorMsg) errorMsg.textContent = err.message || String(err);
+    if(errorBox) errorBox.style.display = 'flex';
+    if(loading) loading.style.display = 'none';
+  }
+}
+
+/* 動畫與移動 */
+const clock = new THREE.Clock();
+function animate(){
+    requestAnimationFrame(animate);
+    const dt = clock.getDelta();
+
+    if(isMobile){
+        // 移动端：摇杆控制移动，触控控制视角
+        const moveSpeed = speed * (moveState.sprint? sprintMultiplier : 1);
+
+        // 根据 yaw/pitch 更新相机方向（注意：不会使用 pointer lock）
+        camera.rotation.order = 'YXZ';
+        camera.rotation.y = yaw;
+        camera.rotation.x = pitch;
+
+        const forward = joystickVector.y; // 摇杆上下
+        const strafe = joystickVector.x;  // 摇杆左右
+
+        const dir = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
+        const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0,1,0)).normalize();
+
+        const move = new THREE.Vector3();
+        move.addScaledVector(dir, -forward * moveSpeed * dt);
+        move.addScaledVector(right, strafe * moveSpeed * dt);
+
+        camera.position.add(move);
+    } else {
+        // 桌面端：原有 pointer lock 控制
+        if(controls.isLocked){
+            const forward = (moveState.forward?1:0) - (moveState.backward?1:0);
+            const strafe = (moveState.right?1:0) - (moveState.left?1:0);
+            const moveSpeed = speed * (moveState.sprint? sprintMultiplier : 1);
+
+            const dir = new THREE.Vector3();
+            controls.getDirection(dir);
+            dir.y = 0; dir.normalize();
+            const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0,1,0)).normalize();
+
+            const move = new THREE.Vector3();
+            move.addScaledVector(dir, forward * moveSpeed * dt);
+            move.addScaledVector(right, strafe * moveSpeed * dt);
+            controls.getObject().position.add(move);
+        }
+    }
+
+    renderer.render(scene, camera);
+}
+
+loadModelFromZip().then(()=>{ animate(); });
+
+</script>
 
 </body>
 </html>
