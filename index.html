@@ -20,10 +20,45 @@
             height: 90vh;
             --poster-color: transparent;
         }
+
+        /* 🔄 Loading 動畫 */
+        #loading {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(51,51,51,0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            color: #fff;
+            font-size: 1.2em;
+            flex-direction: column;
+        }
+        .spinner {
+            border: 6px solid #f3f3f3;
+            border-top: 6px solid #00ffcc;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg);}
+            100% { transform: rotate(360deg);}
+        }
     </style>
 </head>
 <body>
 
+    <!-- 🔄 Loading 畫面 -->
+    <div id="loading">
+        <div class="spinner"></div>
+        <div>模型載入中，請稍候...</div>
+    </div>
+
+    <!-- 3D 模型顯示 -->
     <model-viewer 
         id="model-viewer-element"
         alt="一個 3D 模型"
@@ -36,22 +71,18 @@
     </model-viewer>
 
     <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
-    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
     <script>
-        // 等待整個頁面載入完成後執行
         document.addEventListener('DOMContentLoaded', () => {
             const viewer = document.getElementById('model-viewer-element');
+            const loading = document.getElementById('loading');
 
-            // 定義 ZIP 檔案的路徑和 ZIP 內模型檔案的名稱
             const zipPath = './model.zip';
             const modelFileNameInZip = 'model.glb';
 
-            // 主功能：從 ZIP 檔案中載入模型
             async function loadModelFromZip() {
                 try {
-                    // 步驟 1: 下載 ZIP 檔案
                     console.log(`正在下載 ${zipPath}...`);
                     const response = await fetch(zipPath);
                     if (!response.ok) {
@@ -60,49 +91,41 @@
                     const zipBlob = await response.blob();
                     console.log('下載完成。');
 
-                    // 步驟 2: 使用 JSZip 解壓縮
                     console.log('正在解壓縮...');
                     const jszip = new JSZip();
                     const zip = await jszip.loadAsync(zipBlob);
                     console.log('ZIP 檔案包含:', Object.keys(zip.files));
                     console.log('解壓縮完成。');
 
-                    // 步驟 3: 在 ZIP 中尋找模型檔案
                     const modelFile = zip.file(modelFileNameInZip);
                     if (!modelFile) {
                         throw new Error(`在 ${zipPath} 中找不到檔案: ${modelFileNameInZip}`);
                     }
                     console.log(`找到檔案: ${modelFileNameInZip}`);
 
-                    // 步驟 4: 將模型檔案內容轉為 Blob
                     const modelBlob = await modelFile.async('blob');
-
-                    // 步驟 5: 為 Blob 建立一個暫時的 URL
                     const objectURL = URL.createObjectURL(modelBlob);
                     console.log('建立暫時 URL 並載入模型...');
 
-                    // 步驟 6: 將 URL 賦予 model-viewer 的 src 屬性
                     viewer.src = objectURL;
-                    
-                    // 當模型載入後，可以選擇性地釋放 URL 以節省記憶體
+
                     viewer.addEventListener('load', () => {
                         URL.revokeObjectURL(objectURL);
                         console.log('模型載入完成，暫時 URL 已釋放。');
+                        // ✅ 隱藏 loading
+                        loading.style.display = 'none';
                     }, { once: true });
 
                 } catch (error) {
-                    console.error('解壓縮或載入失敗，ZIP內容:', error, zip ? Object.keys(zip.files) : '無法讀取');
-                    console.error('載入模型時發生錯誤:', error);
+                    console.error('解壓縮或載入失敗:', error);
                     viewer.alt = `載入模型失敗: ${error.message}`;
+                    loading.innerHTML = `<div>載入失敗: ${error.message}</div>`;
                 }
             }
 
-            // 執行主功能
             loadModelFromZip();
         });
     </script>
 
 </body>
 </html>
-
-
