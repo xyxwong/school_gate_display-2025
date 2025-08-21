@@ -59,13 +59,12 @@
                     }
                     const zipBlob = await response.blob();
                     console.log('下載完成。');
-                    const zip = await jszip.loadAsync(zipBlob);
-                    console.log('ZIP 檔案包含:', Object.keys(zip.files));
 
                     // 步驟 2: 使用 JSZip 解壓縮
                     console.log('正在解壓縮...');
                     const jszip = new JSZip();
                     const zip = await jszip.loadAsync(zipBlob);
+                    console.log('ZIP 檔案包含:', Object.keys(zip.files));
                     console.log('解壓縮完成。');
 
                     // 步驟 3: 在 ZIP 中尋找模型檔案
@@ -105,4 +104,5 @@
 
 </body>
 </html>
+
 
