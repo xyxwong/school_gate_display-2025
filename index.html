@@ -332,27 +332,39 @@ function animate(){
     requestAnimationFrame(animate);
     const dt = clock.getDelta();
 
-    if(isMobile){
-        // 移动端：摇杆控制移动，触控控制视角
-        const moveSpeed = speed * (moveState.sprint? sprintMultiplier : 1);
+    if (isMobile) {
+    // 移动端：摇杆控制移动，触控控制视角
+    const moveSpeed = speed * (moveState.sprint ? sprintMultiplier : 1);
 
-        // 根据 yaw/pitch 更新相机方向（注意：不会使用 pointer lock）
-        camera.rotation.order = 'YXZ';
-        camera.rotation.y = yaw;
-        camera.rotation.x = pitch;
+    // 根据 yaw/pitch 更新相机方向（注意：不会使用 pointer lock）
+    camera.rotation.order = 'YXZ';
+    camera.rotation.y = yaw;
+    camera.rotation.x = pitch;
 
-        const forward = joystickVector.y; // 摇杆上下
-        const strafe = joystickVector.x;  // 摇杆左右
+    // 把摇杆输入转换为前/右分量（注意 Y 轴屏幕向下为正，所以向上要取负）
+    const forwardInput = -joystickVector.y; // 推上 => forwardInput 正
+    const strafeInput  = joystickVector.x;  // 推右 => strafeInput 正
 
-        const dir = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
-        const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0,1,0)).normalize();
+    // 计算摄像机朝前的向量（基于 yaw），这里使用摄像机实际的 forward（指向 -Z 的旋转结果）
+    // forwardVec = rotationY(yaw) * (0,0,-1)
+    const forwardVec = new THREE.Vector3(
+        -Math.sin(yaw),
+        0,
+        -Math.cos(yaw)
+    ).normalize();
 
-        const move = new THREE.Vector3();
-        move.addScaledVector(dir, forward * moveSpeed * dt);
-        move.addScaledVector(right, -strafe * moveSpeed * dt);
+    // 右向量 = forward × up（这会得到面向右方的向量）
+    const up = new THREE.Vector3(0, 1, 0);
+    const rightVec = new THREE.Vector3().crossVectors(forwardVec, up).normalize();
 
-        camera.position.add(move);
-    } else {
+    // 组合移动
+    const move = new THREE.Vector3();
+    move.addScaledVector(forwardVec, forwardInput * moveSpeed * dt);
+    move.addScaledVector(rightVec,  strafeInput  * moveSpeed * dt);
+
+    camera.position.add(move);
+}
+ else {
         // 桌面端：原有 pointer lock 控制
         if(controls.isLocked){
             const forward = (moveState.forward?1:0) - (moveState.backward?1:0);
