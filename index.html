@@ -252,9 +252,9 @@ async function ensureJSZipConstructor() {
 
 async function loadModelFromZip() {
   try {
-    loadingText.textContent = '正在下載 ZIP...';
+    loadingText.textContent = '正在加載 ZIP...';
     const resp = await fetch(zipPath);
-    if (!resp.ok) throw new Error('ZIP 下載錯誤: ' + resp.status);
+    if (!resp.ok) throw new Error('ZIP 加載錯誤: ' + resp.status);
     const zipBlob = await resp.blob();
 
     loadingText.textContent = '解壓縮 ZIP...';
@@ -392,3 +392,4 @@ loadModelFromZip().then(()=>{ animate(); });
 
 </body>
 </html>
+
